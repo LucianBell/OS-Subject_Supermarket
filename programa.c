@@ -23,7 +23,45 @@ void *caminhao(void *arg) {
 }
 
 void *funcionario(void *arg) {
-    // Fiz e me buguei tudo, deixei limpo pra não confundir
+    //obtem id do funcionário convertendo o argumento da thread(void *) para int *
+    int id = *((int *)arg);
+    free(arg);
+
+    const char *nome = funcionarios[id];
+
+    printf("Criada a thread que simula o funcionário %s\n", nome);
+
+    while(true){
+        pthread_mutex_lock(&mutex);
+
+        //aguarda até que haja caixas para transportar ou que todas tenham sido processadas
+        while(n_caix_areacarga == 0 && (!finalizado || n_caix_estoque < n_caix_entregues)){
+            pthread_cond_wait(&cond_funcionario, &mutex);
+        }
+
+        //Se todas as caixas foram entregues e levadas ao estoque, quebra o loop
+        if (finalizado && n_caix_areacarga == 0 && n_caix_estoque == n_caix_entregues){
+            pthread_mutex_unlock(&mutex);
+            break;
+        }
+
+        if(n_caix_areacarga > 0){
+            n_caix_areacarga --;
+            n_caix_entregues ++;
+            printf("Funcionário %s, levou uma caixa ao estoque", nome);
+
+            //Acorda caminhões aguardando espaço na área de carga
+            pthread_cond_signal(&cond_caminhao);
+        }
+
+        pthread_mutex_unlock(&mutex);
+
+        //Simula o tempo de transporte da caixa (1 até L décimos de segundo)
+        int tempo = (rand() % L + 1) * 100000;
+        usleep(tempo);
+    }
+
+    print("Trabalho do funcionário %s acabou\n", nome);
     return NULL;
 }
 
