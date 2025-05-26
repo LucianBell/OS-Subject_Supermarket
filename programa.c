@@ -18,7 +18,54 @@ bool finalizado = false;
 const char *funcionarios[] = {"Bilguêiti", "Torvalino", "Ólanmusgo"};
 
 void *caminhao(void *arg) {
-    // Fiz e me buguei tudo, deixei limpo pra não confundir
+    int caixas_total = 0;  // Contador total de caixas entregues por todos os caminhões
+    int id_caminhao = 1;   // Identificador incremental para cada caminhão
+
+    while (caixas_total < N) {
+        // Simula tempo aleatório entre a chegada de caminhões, em microsegundos
+        int tempo_chegada = (rand() % T + 1) * 100000;
+        usleep(tempo_chegada);
+
+        // Gera quantidade aleatória de caixas no pedido (entre 1 e C)
+        int pedido = rand() % C + 1;
+
+        // Garante que o total de caixas não ultrapasse N
+        if (caixas_total + pedido > N) {
+            pedido = N - caixas_total;
+        }
+
+        printf("Caminhão %d, vai entregar %d caixa(s) na área de carga\n", id_caminhao, pedido);
+
+        // Entrega das caixas (uma por uma, respeitando limite da área de carga B)
+        for (int i = 0; i < pedido; i++) {
+            pthread_mutex_lock(&mutex);
+
+            // Espera espaço na área de carga
+            while (n_caix_areacarga >= B) {
+                pthread_cond_wait(&cond_caminhao, &mutex);
+            }
+
+            // Entrega uma caixa
+            n_caix_areacarga++;
+            caixas_total++;
+
+            printf("Caminhão %d, descarregou 1 caixa na área de carga\n", id_caminhao);
+
+            // Acorda algum funcionário que esteja esperando por caixas
+            pthread_cond_signal(&cond_funcionario);
+            pthread_mutex_unlock(&mutex);
+        }
+
+        id_caminhao++; // Próximo caminhão
+    }
+
+    // Indica que nenhum caminhão mais virá (fim das entregas)
+    pthread_mutex_lock(&mutex);
+    finalizado = true;
+    pthread_cond_broadcast(&cond_funcionario); // Acorda todos os funcionários que estejam esperando
+    pthread_mutex_unlock(&mutex);
+
+    printf("Encerrou thread caminhão\n");
     return NULL;
 }
 
@@ -48,7 +95,7 @@ void *funcionario(void *arg) {
         if(n_caix_areacarga > 0){
             n_caix_areacarga --;
             n_caix_entregues ++;
-            printf("Funcionário %s, levou uma caixa ao estoque", nome);
+            printf("Funcionário %s, levou uma caixa ao estoque\n", nome);
 
             //Acorda caminhões aguardando espaço na área de carga
             pthread_cond_signal(&cond_caminhao);
@@ -61,7 +108,7 @@ void *funcionario(void *arg) {
         usleep(tempo);
     }
 
-    print("Trabalho do funcionário %s acabou\n", nome);
+    printf("Trabalho do funcionário %s acabou\n", nome);
     return NULL;
 }
 
@@ -102,20 +149,24 @@ int main(int argc, char *argv[]) {
         *id = i;
         pthread_create(&threads_funcionarios[i], NULL, funcionario, id);
     }
-    
-    printf("Criada thread que simula chegada de caminhões\n");
-    
-    // IMPLEMENTAR A LÓGICA DE CRIAÇÃO DOS CAMINHÕES
 
-    printf("Encerrou thread caminhão\n");
-    
-    // IPLEMENTAR A FINALIZAÇÃO
-    
+    // Cria thread do caminhão
+    pthread_t thread_caminhao;
+    printf("Criada thread que simula chegada de caminhões\n");
+    pthread_create(&thread_caminhao, NULL, caminhao, NULL);
+
+    // Espera a thread do caminhão terminar
+    pthread_join(thread_caminhao, NULL);
+
+    // Espera todas as threads de funcionários terminarem
     for (int i = 0; i < F; i++) {
         pthread_join(threads_funcionarios[i], NULL);
     }
-    
+
     printf("Simulação concluída. Caixas no estoque: %d\n", n_caix_estoque);
-    
     return 0;
 }
+
+
+//execução com gcc programa.c -o programa -Wall -lpthread
+//./programa (casos teste)
