@@ -4,8 +4,13 @@
 #include <unistd.h>
 #include <time.h>
 #include <stdbool.h>
+#include <string.h>
+#include <stdarg.h>
+
+#define MAX_BUFFER_SIZE 10000  // Tamanho máximo do buffer de saída
 
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t mutex_output = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t cond_caminhao = PTHREAD_COND_INITIALIZER;
 pthread_cond_t cond_funcionario = PTHREAD_COND_INITIALIZER;
 
@@ -15,7 +20,20 @@ int n_caix_estoque = 0;    // Caixas movidas para o estoque
 int N, B, C, F, T, L;
 bool finalizado = false;
 
+char output_buffer[MAX_BUFFER_SIZE];  // Buffer de saída para armazenar logs
+
 const char *funcionarios[] = {"Bilguêiti", "Torvalino", "Ólanmusgo"};
+
+// Função protegida por mutex que adiciona texto formatado ao buffer de saída
+void log_buffer(const char *fmt, ...) {
+    pthread_mutex_lock(&mutex_output);
+    va_list args;
+    va_start(args, fmt);
+    int len = strlen(output_buffer);
+    vsnprintf(output_buffer + len, MAX_BUFFER_SIZE - len, fmt, args);
+    va_end(args);
+    pthread_mutex_unlock(&mutex_output);
+}
 
 void *caminhao(void *arg) {
     int caixas_total = 0;  // Contador total de caixas entregues
@@ -34,7 +52,7 @@ void *caminhao(void *arg) {
             pedido = N - caixas_total;
         }
 
-        printf("Caminhão %d, vai entregar %d caixa(s) na área de carga\n", id_caminhao, pedido);
+        log_buffer("Caminhão %d, vai entregar %d caixa(s) na área de carga\n", id_caminhao, pedido);
 
         // Tenta descarregar todas as caixas do pedido de uma vez
         pthread_mutex_lock(&mutex);
@@ -48,7 +66,7 @@ void *caminhao(void *arg) {
         n_caix_entregues += pedido;
         caixas_total += pedido;
 
-        printf("Caminhão %d, descarregou %d caixa(s) na área de carga\n", id_caminhao, pedido);
+        log_buffer("Caminhão %d, descarregou %d caixa(s) na área de carga\n", id_caminhao, pedido);
 
         // Acorda funcionários que estejam esperando
         pthread_cond_broadcast(&cond_funcionario);
@@ -70,7 +88,7 @@ void *caminhao(void *arg) {
     }
     pthread_mutex_unlock(&mutex);
 
-    printf("Encerrou thread caminhão\n");
+    log_buffer("Encerrou thread caminhão\n");
     return NULL;
 }
 
@@ -79,7 +97,7 @@ void *funcionario(void *arg) {
     free(arg);
     const char *nome = funcionarios[id];
 
-    printf("Criada thread que simula o funcionário %s\n", nome);
+    log_buffer("Criada thread que simula o funcionário %s\n", nome);
 
     while (true) {
         pthread_mutex_lock(&mutex);
@@ -98,7 +116,7 @@ void *funcionario(void *arg) {
         if (n_caix_areacarga > 0) {
             n_caix_areacarga--;
             n_caix_estoque++;
-            printf("Funcionário %s, levou uma caixa ao estoque\n", nome);
+            log_buffer("Funcionário %s, levou uma caixa ao estoque\n", nome);
 
             // Acorda caminhão que esteja esperando espaço
             pthread_cond_signal(&cond_caminhao);
@@ -111,7 +129,7 @@ void *funcionario(void *arg) {
         usleep(tempo);
     }
 
-    printf("Trabalho do funcionário %s acabou\n", nome);
+    log_buffer("Trabalho do funcionário %s acabou\n", nome);
     return NULL;
 }
 
@@ -143,13 +161,13 @@ int main(int argc, char *argv[]) {
 
     srand(time(NULL));
 
-    printf("Iniciando simulação com N=%d, B=%d, C=%d, F=%d, T=%d, L=%d\n", N, B, C, F, T, L);
+    log_buffer("Iniciando simulação com N=%d, B=%d, C=%d, F=%d, T=%d, L=%d\n", N, B, C, F, T, L);
 
     pthread_t threads_funcionarios[F];
     pthread_t thread_caminhao;
 
     // Cria thread do caminhão
-    printf("Criada thread que simula chegada de caminhões\n");
+    log_buffer("Criada thread que simula chegada de caminhões\n");
     pthread_create(&thread_caminhao, NULL, caminhao, NULL);
 
     // Cria threads dos funcionários
@@ -167,6 +185,10 @@ int main(int argc, char *argv[]) {
     // Espera a thread do caminhão terminar
     pthread_join(thread_caminhao, NULL);
 
-    printf("Simulação concluída. Caixas no estoque: %d\n", n_caix_estoque);
+    log_buffer("Simulação concluída. Caixas no estoque: %d\n", n_caix_estoque);
+
+    // Imprime todo o conteúdo armazenado no buffer de saída
+    printf("%s", output_buffer);
+
     return 0;
 }
